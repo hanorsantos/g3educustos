@@ -13,7 +13,8 @@ interface CalculationMemorialProps {
   ocv: string
   lucro: string
   precoVenda: string
-  calculationType: "preco-venda" | "lucro"
+  desconto: string
+  calculationType: "preco-venda" | "lucro" | "desconto"
 }
 
 export function CalculationMemorial({
@@ -24,6 +25,7 @@ export function CalculationMemorial({
   ocv,
   lucro,
   precoVenda,
+  desconto,
   calculationType,
 }: CalculationMemorialProps) {
   const memorialRef = useRef<HTMLDivElement>(null)
@@ -38,7 +40,7 @@ export function CalculationMemorial({
   // Parse OCV (percentage)
   let ocvValue = 0
   if (ocv.includes("%")) {
-    ocvValue = Number.parseFloat(ocv.replace("%", "")) / 100
+    ocvValue = Number.parseFloat(ocv.replace("%", "").replace(",", ".")) / 100
   } else {
     ocvValue = Number.parseFloat(ocv.replace(",", "."))
   }
@@ -46,9 +48,17 @@ export function CalculationMemorial({
   // Parse L (percentage) - only used when calculating price
   let lucroValue = 0
   if (lucro.includes("%")) {
-    lucroValue = Number.parseFloat(lucro.replace("%", "")) / 100
+    lucroValue = Number.parseFloat(lucro.replace("%", "").replace(",", ".")) / 100
   } else {
     lucroValue = Number.parseFloat(lucro.replace(",", "."))
+  }
+
+  // Parse Desconto (percentage)
+  let descontoValue = 0
+  if (desconto.includes("%")) {
+    descontoValue = Number.parseFloat(desconto.replace("%", "").replace(",", ".")) / 100
+  } else {
+    descontoValue = Number.parseFloat(desconto.replace(",", "."))
   }
 
   const baseValue = cfunValue + cmvunValue
@@ -58,17 +68,15 @@ export function CalculationMemorial({
   let lucroCalculado = 0
   let lucroPercentual = 0
   let lucroMonetario = 0
+  let precoComDesconto = 0
+  let valorDesconto = 0
 
   if (calculationType === "preco-venda") {
     // Calculate price
     const ocvPlusLucro = ocvValue + lucroValue
     const denominador = 1 - ocvPlusLucro
     resultado = baseValue / denominador
-
-    // Calculate break-even price (Lucro = 0)
-    const denominadorEquilibrio = 1 - ocvValue
-    const precoVendaEquilibrio = baseValue / denominadorEquilibrio
-  } else {
+  } else if (calculationType === "lucro") {
     // Calculate profit
     // Formula rearranged: L = 1 - OCV - (CFun + CMVun) / PV
     lucroCalculado = 1 - ocvValue - baseValue / precoVendaValue
@@ -76,6 +84,18 @@ export function CalculationMemorial({
 
     // Lucro monetário = PV - CFun - CMVun - (PV * OCV)
     lucroMonetario = precoVendaValue - baseValue - precoVendaValue * ocvValue
+
+    resultado = lucroCalculado
+  } else if (calculationType === "desconto") {
+    // Calculate profit with discount
+    // Formula: LUCRO = PV - (PV * DESCONTO) - CFun - CMVun - (OCV * (PV - PV * DESCONTO))
+    precoComDesconto = precoVendaValue * (1 - descontoValue)
+    valorDesconto = precoVendaValue * descontoValue
+
+    // LUCRO = PV * (1 - DESCONTO) - CFun - CMVun - (OCV * PV * (1 - DESCONTO))
+    lucroMonetario = precoComDesconto - baseValue - ocvValue * precoComDesconto
+    lucroPercentual = (lucroMonetario / precoVendaValue) * 100
+    lucroCalculado = lucroMonetario / precoVendaValue
 
     resultado = lucroCalculado
   }
@@ -131,7 +151,7 @@ export function CalculationMemorial({
           <div className="space-y-4" ref={memorialRef}>
             <div className="p-4 bg-gray-50 rounded-lg">
               <h3 className="font-bold mb-2">Dados Informados:</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <div>
                   <span className="font-medium">CFun:</span> {currencySymbol} {cfun}
                 </div>
@@ -142,21 +162,26 @@ export function CalculationMemorial({
                   <span className="font-medium">OCV:</span>
                   <div className="mt-1">{ocv}</div>
                 </div>
-                <div>
-                  {calculationType === "preco-venda" ? (
-                    <>
-                      <span className="font-medium">L:</span>
-                      <div className="mt-1">{lucro}</div>
-                    </>
-                  ) : (
-                    <>
-                      <span className="font-medium">PV:</span>
-                      <div className="mt-1">
-                        {currencySymbol} {precoVenda}
-                      </div>
-                    </>
-                  )}
-                </div>
+                {calculationType === "preco-venda" && (
+                  <div>
+                    <span className="font-medium">L:</span>
+                    <div className="mt-1">{lucro}</div>
+                  </div>
+                )}
+                {(calculationType === "lucro" || calculationType === "desconto") && (
+                  <div>
+                    <span className="font-medium">PV:</span>
+                    <div className="mt-1">
+                      {currencySymbol} {precoVenda}
+                    </div>
+                  </div>
+                )}
+                {calculationType === "desconto" && (
+                  <div>
+                    <span className="font-medium">Desconto:</span>
+                    <div className="mt-1">{desconto}</div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -270,7 +295,7 @@ export function CalculationMemorial({
                   </div>
                 </TabsContent>
               </Tabs>
-            ) : (
+            ) : calculationType === "lucro" ? (
               <div className="space-y-4">
                 <div className="p-4 bg-green-50 rounded-lg">
                   <h3 className="font-bold mb-2">Lucro Calculado:</h3>
@@ -334,6 +359,88 @@ export function CalculationMemorial({
                       </p>
                       <p className="text-sm font-bold">
                         Lucro Monetário = {currencySymbol} {formatCurrency(lucroMonetario)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="p-4 bg-orange-50 rounded-lg">
+                  <h3 className="font-bold mb-2">Lucro com Desconto:</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-sm text-gray-600">Preço com Desconto:</p>
+                      <p className="text-xl font-bold text-orange-800">
+                        {currencySymbol} {formatCurrency(precoComDesconto)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Lucro Percentual:</p>
+                      <p className="text-xl font-bold text-orange-800">{formatPercentage(resultado)}%</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Lucro Monetário:</p>
+                      <p className="text-xl font-bold text-orange-800">
+                        {currencySymbol} {formatCurrency(lucroMonetario)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <h3 className="font-bold mb-2">Fórmula e Cálculo:</h3>
+                  <div className="space-y-2">
+                    <p>
+                      <strong>Fórmula:</strong> LUCRO = PV - (PV × DESCONTO) - CFun - CMVun - (OCV × (PV - PV ×
+                      DESCONTO))
+                    </p>
+                    <p>
+                      <strong>Onde:</strong>
+                    </p>
+                    <ul className="list-disc list-inside ml-4 space-y-1">
+                      <li>PV = Preço de Venda original</li>
+                      <li>DESCONTO = Desconto aplicado (%)</li>
+                      <li>CFun = Custo Fixo unitário</li>
+                      <li>CMVun = Custo da Mercadoria Vendida Unitária</li>
+                      <li>OCV = Outros Custos Variáveis (%)</li>
+                    </ul>
+
+                    <div className="mt-4 space-y-2 font-mono bg-gray-100 p-4 rounded-md text-sm">
+                      <p>Preço com Desconto = PV × (1 - DESCONTO)</p>
+                      <p>
+                        Preço com Desconto = {currencySymbol} {formatCurrency(precoVendaValue)} × (1 -{" "}
+                        {formatDecimal(descontoValue)})
+                      </p>
+                      <p>
+                        Preço com Desconto = {currencySymbol} {formatCurrency(precoComDesconto)}
+                      </p>
+                      <br />
+                      <p>LUCRO = Preço com Desconto - CFun - CMVun - (OCV × Preço com Desconto)</p>
+                      <p>
+                        LUCRO = {currencySymbol} {formatCurrency(precoComDesconto)} - {currencySymbol}{" "}
+                        {formatCurrency(cfunValue)} - {currencySymbol} {formatCurrency(cmvunValue)} - (
+                        {formatDecimal(ocvValue)} × {currencySymbol} {formatCurrency(precoComDesconto)})
+                      </p>
+                      <p>
+                        LUCRO = {currencySymbol} {formatCurrency(precoComDesconto)} - {currencySymbol}{" "}
+                        {formatCurrency(baseValue)} - {currencySymbol} {formatCurrency(ocvValue * precoComDesconto)}
+                      </p>
+                      <p>
+                        LUCRO = {currencySymbol} {formatCurrency(lucroMonetario)} ({formatPercentage(resultado)}%)
+                      </p>
+                    </div>
+
+                    <div className="mt-4 p-3 bg-yellow-50 rounded-md">
+                      <p className="text-sm font-medium text-yellow-800">Resumo:</p>
+                      <p className="text-sm">
+                        Valor do Desconto: {currencySymbol} {formatCurrency(valorDesconto)}
+                      </p>
+                      <p className="text-sm">
+                        Preço Final: {currencySymbol} {formatCurrency(precoComDesconto)}
+                      </p>
+                      <p className="text-sm">
+                        Lucro Final: {currencySymbol} {formatCurrency(lucroMonetario)}
                       </p>
                     </div>
                   </div>
